@@ -46,6 +46,7 @@ class PluginTicketdashboardDataProvider
 
         self::applyGroupJoin($params, $filters);
         self::applyTechnicianJoin($params, $filters);
+        self::applyRequesterJoin($params, $filters);
 
         $row = $DB->request($params)->current();
 
@@ -77,6 +78,7 @@ class PluginTicketdashboardDataProvider
         ];
         self::applyGroupJoin($paramsTotal, $filters);
         self::applyTechnicianJoin($paramsTotal, $filters);
+        self::applyRequesterJoin($paramsTotal, $filters);
         $total = (int) ($DB->request($paramsTotal)->current()['total'] ?? 0);
 
         // Total do tipo específico
@@ -89,6 +91,7 @@ class PluginTicketdashboardDataProvider
         ];
         self::applyGroupJoin($paramsType, $filters);
         self::applyTechnicianJoin($paramsType, $filters);
+        self::applyRequesterJoin($paramsType, $filters);
         $count = (int) ($DB->request($paramsType)->current()['total'] ?? 0);
 
         $pct = $total > 0 ? round($count / $total * 100, 1) : 0;
@@ -145,6 +148,9 @@ class PluginTicketdashboardDataProvider
             'ORDER'   => ['total DESC'],
             'LIMIT'   => 15,
         ];
+
+        self::applyTechnicianJoin($params, $filters);
+        self::applyRequesterJoin($params, $filters);
 
         $labels = [];
         $values = [];
@@ -214,6 +220,7 @@ class PluginTicketdashboardDataProvider
 
         self::applyGroupJoin($params, $filters);
         self::applyTechnicianJoin($params, $filters);
+        self::applyRequesterJoin($params, $filters);
 
         $labels = [];
         $values = [];
@@ -275,6 +282,7 @@ class PluginTicketdashboardDataProvider
 
             self::applyGroupJoin($params, $filters);
             self::applyTechnicianJoin($params, $filters);
+            self::applyRequesterJoin($params, $filters);
 
             $cards[$key]['value'] = (int) ($DB->request($params)->current()['total'] ?? 0);
         }
@@ -319,6 +327,7 @@ class PluginTicketdashboardDataProvider
 
         self::applyGroupJoin($params, $filters);
         self::applyTechnicianJoin($params, $filters);
+        self::applyRequesterJoin($params, $filters);
 
         return self::buildComplianceResponse($DB->request($params), 'SLA — Tempo de Solução');
     }
@@ -356,6 +365,7 @@ class PluginTicketdashboardDataProvider
 
         self::applyGroupJoin($params, $filters);
         self::applyTechnicianJoin($params, $filters);
+        self::applyRequesterJoin($params, $filters);
 
         return self::buildComplianceResponse($DB->request($params), 'TIT — Tempo de Atendimento');
     }
@@ -388,6 +398,7 @@ class PluginTicketdashboardDataProvider
 
         self::applyGroupJoin($params, $filters);
         self::applyTechnicianJoin($params, $filters);
+        self::applyRequesterJoin($params, $filters);
 
         $labels = [];
         $values = [];
@@ -467,6 +478,7 @@ class PluginTicketdashboardDataProvider
 
         self::applyGroupJoin($params, $filters);
         self::applyTechnicianJoin($params, $filters);
+        self::applyRequesterJoin($params, $filters);
 
         // Monta estrutura: techs[tech_id] = ['name' => ..., 'origins' => [origin => count]]
         $techs   = [];
@@ -563,7 +575,37 @@ class PluginTicketdashboardDataProvider
             $where['glpi_tickets.priority'] = (int) $filters['priority'];
         }
 
+        // Status
+        if (!empty($filters['status']) && (int) $filters['status'] > 0) {
+            $where['glpi_tickets.status'] = (int) $filters['status'];
+        }
+
         return $where;
+    }
+
+    /**
+     * Adiciona INNER JOIN de requerente ao $params quando o filtro requester_id estiver ativo.
+     */
+    private static function applyRequesterJoin(array &$params, array $filters): void
+    {
+        $uid = (int) ($filters['requester_id'] ?? 0);
+
+        if ($uid <= 0) {
+            return;
+        }
+
+        $params['INNER JOIN']['glpi_tickets_users AS tu_r'] = [
+            'ON' => [
+                'glpi_tickets' => 'id',
+                'tu_r'         => 'tickets_id',
+                [
+                    'AND' => [
+                        'tu_r.type'     => 1,
+                        'tu_r.users_id' => $uid,
+                    ],
+                ],
+            ],
+        ];
     }
 
     /**

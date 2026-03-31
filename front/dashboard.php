@@ -8,6 +8,7 @@ $widgets    = PluginTicketdashboardWidget::getForDashboard($dashboard->fields['i
 $types      = PluginTicketdashboardWidget::getWidgetTypes();
 $groups     = PluginTicketdashboardDashboard::getGroupsForFilter();
 $technicians = PluginTicketdashboardDashboard::getTechniciansForFilter();
+$requesters  = PluginTicketdashboardDashboard::getRequestersForFilter();
 $ajaxUrl    = Plugin::getWebDir('ticketdashboard') . '/ajax/data.php';
 $builderUrl = Plugin::getWebDir('ticketdashboard') . '/front/builder.php';
 
@@ -81,6 +82,27 @@ Html::header(
                         <?php endforeach; ?>
                     </select>
                 </div>
+                <div class="col-md-2">
+                    <label class="form-label form-label-sm mb-1"><?= __('Requerente', 'ticketdashboard') ?></label>
+                    <select id="filter_requester_id" class="form-select form-select-sm">
+                        <option value="0"><?= __('Todos', 'ticketdashboard') ?></option>
+                        <?php foreach ($requesters as $rid => $rname): ?>
+                            <option value="<?= (int)$rid ?>"><?= htmlspecialchars($rname) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label form-label-sm mb-1"><?= __('Status', 'ticketdashboard') ?></label>
+                    <select id="filter_status" class="form-select form-select-sm">
+                        <option value="0"><?= __('Todos', 'ticketdashboard') ?></option>
+                        <option value="1"><?= __('Novo', 'ticketdashboard') ?></option>
+                        <option value="2"><?= __('Em atendimento', 'ticketdashboard') ?></option>
+                        <option value="3"><?= __('Planejado', 'ticketdashboard') ?></option>
+                        <option value="4"><?= __('Pendente', 'ticketdashboard') ?></option>
+                        <option value="5"><?= __('Resolvido', 'ticketdashboard') ?></option>
+                        <option value="6"><?= __('Fechado', 'ticketdashboard') ?></option>
+                    </select>
+                </div>
                 <div class="col-md-1">
                     <label class="form-label form-label-sm mb-1"><?= __('Prioridade', 'ticketdashboard') ?></label>
                     <select id="filter_priority" class="form-select form-select-sm">
@@ -152,12 +174,14 @@ const chartInstances = {};
 
 function getFilters() {
     return {
-        date_from:   document.getElementById('filter_date_from').value,
-        date_to:     document.getElementById('filter_date_to').value,
-        ticket_type: document.getElementById('filter_ticket_type').value,
-        groups_id:   document.getElementById('filter_groups_id').value,
-        priority:    document.getElementById('filter_priority').value,
-        users_id:    document.getElementById('filter_users_id').value,
+        date_from:    document.getElementById('filter_date_from').value,
+        date_to:      document.getElementById('filter_date_to').value,
+        ticket_type:  document.getElementById('filter_ticket_type').value,
+        groups_id:    document.getElementById('filter_groups_id').value,
+        priority:     document.getElementById('filter_priority').value,
+        users_id:     document.getElementById('filter_users_id').value,
+        requester_id: document.getElementById('filter_requester_id').value,
+        status:       document.getElementById('filter_status').value,
     };
 }
 

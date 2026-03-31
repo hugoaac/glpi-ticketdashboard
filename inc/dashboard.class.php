@@ -143,6 +143,38 @@ class PluginTicketdashboardDashboard extends CommonDBTM
     }
 
     /**
+     * Lista de requerentes para o filtro (usuários com tickets abertos como requerente).
+     */
+    public static function getRequestersForFilter(): array
+    {
+        global $DB;
+
+        $requesters = [];
+        $iter = $DB->request([
+            'SELECT'     => ['u.id', 'u.firstname', 'u.realname', 'u.name'],
+            'FROM'       => ['glpi_users AS u'],
+            'INNER JOIN' => [
+                'glpi_tickets_users AS tu' => [
+                    'ON' => ['u.id', 'tu.users_id'],
+                ],
+            ],
+            'WHERE'   => ['tu.type' => 1, 'u.is_active' => 1, 'u.is_deleted' => 0],
+            'GROUPBY' => ['u.id'],
+            'ORDERBY' => ['u.realname ASC', 'u.firstname ASC'],
+        ]);
+
+        foreach ($iter as $row) {
+            $name = trim($row['firstname'] . ' ' . $row['realname']);
+            if ($name === '') {
+                $name = $row['name'];
+            }
+            $requesters[$row['id']] = $name;
+        }
+
+        return $requesters;
+    }
+
+    /**
      * Lista de técnicos para o filtro (usuários com tickets atribuídos no período).
      */
     public static function getTechniciansForFilter(): array
