@@ -13,9 +13,10 @@ $filters     = [
     'groups_id'    => $_GET['groups_id']    ?? 0,
     'priority'     => $_GET['priority']     ?? 0,
     'users_id'     => $_GET['users_id']     ?? [],
-    'requester_id' => $_GET['requester_id'] ?? 0,
-    'author_id'    => $_GET['author_id']    ?? 0,
-    'status'       => $_GET['status']       ?? 0,
+    'requester_id'    => $_GET['requester_id']    ?? 0,
+    'author_id'       => $_GET['author_id']       ?? 0,
+    'member_group_id' => $_GET['member_group_id'] ?? 0,
+    'status'          => $_GET['status']          ?? 0,
 ];
 
 if (empty($widget_type)) {

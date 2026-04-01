@@ -12,7 +12,8 @@ class PluginTicketdashboardWidget extends CommonDBTM
     public const TYPE_TIT         = 'tit_compliance';
     public const TYPE_BY_STATUS   = 'by_status';
     public const TYPE_BY_ORIGIN   = 'by_origin';
-    public const TYPE_TECH_ORIGIN = 'tech_origin_matrix';
+    public const TYPE_TECH_ORIGIN    = 'tech_origin_matrix';
+    public const TYPE_AUTHOR_ORIGIN  = 'author_origin_matrix';
 
     public static $rightname = 'ticket';
 
@@ -83,6 +84,12 @@ class PluginTicketdashboardWidget extends CommonDBTM
             ],
             self::TYPE_TECH_ORIGIN => [
                 'label' => __('Técnico × Origem', 'ticketdashboard'),
+                'icon'  => 'fas fa-table',
+                'size'  => 'col-md-12',
+                'chart' => 'matrix_table',
+            ],
+            self::TYPE_AUTHOR_ORIGIN => [
+                'label' => __('Autor × Origem', 'ticketdashboard'),
                 'icon'  => 'fas fa-table',
                 'size'  => 'col-md-12',
                 'chart' => 'matrix_table',

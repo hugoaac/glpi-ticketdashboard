@@ -7,9 +7,10 @@ $dashboard  = PluginTicketdashboardDashboard::getOrCreateDefault();
 $widgets    = PluginTicketdashboardWidget::getForDashboard($dashboard->fields['id']);
 $types      = PluginTicketdashboardWidget::getWidgetTypes();
 $groups     = PluginTicketdashboardDashboard::getGroupsForFilter();
-$technicians = PluginTicketdashboardDashboard::getTechniciansForFilter();
-$requesters  = PluginTicketdashboardDashboard::getRequestersForFilter();
-$authors     = PluginTicketdashboardDashboard::getAuthorsForFilter();
+$technicians   = PluginTicketdashboardDashboard::getTechniciansForFilter();
+$requesters    = PluginTicketdashboardDashboard::getRequestersForFilter();
+$authors       = PluginTicketdashboardDashboard::getAuthorsForFilter();
+$memberGroups  = PluginTicketdashboardDashboard::getMemberGroupsForFilter();
 $ajaxUrl     = Plugin::getWebDir('ticketdashboard') . '/ajax/data.php';
 $ticketsUrl  = Plugin::getWebDir('ticketdashboard') . '/ajax/tickets.php';
 $builderUrl  = Plugin::getWebDir('ticketdashboard') . '/front/builder.php';
@@ -99,6 +100,15 @@ Html::header(
                         <option value="0"><?= __('Todos', 'ticketdashboard') ?></option>
                         <?php foreach ($authors as $aid => $aname): ?>
                             <option value="<?= (int)$aid ?>"><?= htmlspecialchars($aname) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label form-label-sm mb-1"><?= __('Membro do Grupo', 'ticketdashboard') ?></label>
+                    <select id="filter_member_group_id" class="form-select form-select-sm">
+                        <option value="0"><?= __('Todos', 'ticketdashboard') ?></option>
+                        <?php foreach ($memberGroups as $mgid => $mgname): ?>
+                            <option value="<?= (int)$mgid ?>"><?= htmlspecialchars($mgname) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -230,9 +240,10 @@ function getFilters() {
         groups_id:    document.getElementById('filter_groups_id').value,
         priority:     document.getElementById('filter_priority').value,
         users_id:     document.getElementById('filter_users_id').value,
-        requester_id: document.getElementById('filter_requester_id').value,
-        author_id:    document.getElementById('filter_author_id').value,
-        status:       document.getElementById('filter_status').value,
+        requester_id:    document.getElementById('filter_requester_id').value,
+        author_id:       document.getElementById('filter_author_id').value,
+        member_group_id: document.getElementById('filter_member_group_id').value,
+        status:          document.getElementById('filter_status').value,
     };
 }
 
@@ -315,12 +326,16 @@ function renderWidget(body, type, data) {
         const esc  = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         const attr = s => String(s).replace(/"/g,'&quot;');
 
-        const drillCell = (count, techId, originId, techName, originName, bold) =>
+        const drillMode = data.drill_mode || 'tech';
+        const rowLabel  = drillMode === 'author' ? 'Autor' : 'Técnico';
+
+        const drillCell = (count, rowId, originId, rowName, originName, bold) =>
             count > 0
                 ? `<td class="text-center small px-2 drill-cell${bold ? ' fw-bold' : ' fw-semibold'}"
                        style="cursor:pointer;color:#1976d2"
-                       data-tech-id="${techId}" data-origin-id="${originId}"
-                       data-tech-name="${attr(techName)}" data-origin-name="${attr(originName)}">${count}</td>`
+                       data-drill-mode="${drillMode}"
+                       data-row-id="${rowId}" data-origin-id="${originId}"
+                       data-row-name="${attr(rowName)}" data-origin-name="${attr(originName)}">${count}</td>`
                 : `<td class="text-center small px-2${bold ? ' fw-bold' : ''}"><span class="text-muted">—</span></td>`;
 
         const headers = data.headers.map(h => `<th class="text-center small fw-semibold px-2">${esc(h)}</th>`).join('');
@@ -342,7 +357,7 @@ function renderWidget(body, type, data) {
             <table class="table table-sm table-bordered table-hover mb-0" style="font-size:.82rem;">
                 <thead class="table-light">
                     <tr>
-                        <th class="px-2 small fw-semibold">Técnico</th>
+                        <th class="px-2 small fw-semibold">${rowLabel}</th>
                         ${headers}
                         <th class="text-center small fw-semibold px-2">Total</th>
                     </tr>
@@ -420,16 +435,20 @@ document.addEventListener('DOMContentLoaded', loadAllWidgets);
 let currentDrillData  = [];
 let currentDrillTitle = '';
 
-const DRILL_HEADERS = ['ID', 'Título', 'Nome Operador', 'Data Criação', 'Data Conclusão', 'Origem', 'Status'];
-const DRILL_FIELDS  = ['id', 'name', 'tech', 'date', 'closedate', 'origin', 'status'];
+const DRILL_HEADERS_TECH   = ['ID', 'Título', 'Nome Operador', 'Autor', 'Data Criação', 'Data Conclusão', 'Origem', 'Status'];
+const DRILL_FIELDS_TECH    = ['id', 'name', 'tech', 'author', 'date', 'closedate', 'origin', 'status'];
+const DRILL_HEADERS_AUTHOR = ['ID', 'Título', 'Autor', 'Nome Operador', 'Data Criação', 'Data Conclusão', 'Origem', 'Status'];
+const DRILL_FIELDS_AUTHOR  = ['id', 'name', 'author', 'tech', 'date', 'closedate', 'origin', 'status'];
+let   currentDrillMode = 'tech';
 
 document.addEventListener('click', function (e) {
     const cell = e.target.closest('.drill-cell');
     if (!cell) return;
     openDrillDown(
-        cell.dataset.techId,
+        cell.dataset.drillMode  || 'tech',
+        cell.dataset.rowId,
         cell.dataset.originId,
-        cell.dataset.techName,
+        cell.dataset.rowName,
         cell.dataset.originName
     );
 });
@@ -448,19 +467,19 @@ function drillFilename(ext) {
     return 'chamados_' + (safe || 'todos') + '.' + ext;
 }
 
-async function openDrillDown(techId, originId, techName, originName) {
+async function openDrillDown(drillMode, rowId, originId, rowName, originName) {
     const modalEl = document.getElementById('drilldown-modal');
     const modal   = bootstrap.Modal.getOrCreateInstance(modalEl);
 
-    // Título dinâmico
+    currentDrillMode = drillMode || 'tech';
+
     const parts = [];
-    if (techName   && techName   !== 'Todos') parts.push(techName);
+    if (rowName    && rowName    !== 'Todos') parts.push(rowName);
     if (originName && originName !== 'Todas') parts.push(originName);
     currentDrillTitle = parts.join(' × ') || 'Todos os chamados';
     document.getElementById('drilldown-modal-title').textContent =
         'Detalhamento — ' + currentDrillTitle;
 
-    // Reset
     currentDrillData = [];
     setExportButtons(false);
     document.getElementById('drilldown-modal-body').innerHTML =
@@ -470,9 +489,13 @@ async function openDrillDown(techId, originId, techName, originName) {
     modal.show();
 
     try {
+        const extra = currentDrillMode === 'author'
+            ? { drill_author_id: rowId, drill_tech_id: 0 }
+            : { drill_tech_id: rowId,   drill_author_id: 0 };
+
         const params = new URLSearchParams({
             ...getFilters(),
-            drill_tech_id:   techId,
+            ...extra,
             drill_origin_id: originId,
         });
         const res  = await fetch(TICKETS_URL + '?' + params);
@@ -496,41 +519,35 @@ function renderDrillDown(data) {
     currentDrillData = data.tickets;
     setExportButtons(true);
 
-    const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const esc    = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const fields = currentDrillMode === 'author' ? DRILL_FIELDS_AUTHOR : DRILL_FIELDS_TECH;
+    const hdrs   = currentDrillMode === 'author' ? DRILL_HEADERS_AUTHOR : DRILL_HEADERS_TECH;
 
     const statusClass = {
-        'Novo':            'text-primary',
-        'Em atendimento':  'text-warning',
-        'Planejado':       'text-info',
-        'Pendente':        'text-secondary',
-        'Resolvido':       'text-success',
-        'Fechado':         'text-muted',
+        'Novo':           'text-primary',
+        'Em atendimento': 'text-warning',
+        'Planejado':      'text-info',
+        'Pendente':       'text-secondary',
+        'Resolvido':      'text-success',
+        'Fechado':        'text-muted',
     };
 
-    const rows = data.tickets.map(t => `
-        <tr>
-            <td class="small px-2 text-nowrap fw-semibold">${esc(String(t.id))}</td>
-            <td class="small px-2">${esc(t.name)}</td>
-            <td class="small px-2 text-nowrap">${esc(t.tech)}</td>
-            <td class="small px-2 text-nowrap">${esc(t.date)}</td>
-            <td class="small px-2 text-nowrap">${esc(t.closedate)}</td>
-            <td class="small px-2 text-nowrap">${esc(t.origin)}</td>
-            <td class="small px-2 text-nowrap ${statusClass[t.status] || ''}">${esc(t.status)}</td>
-        </tr>`).join('');
+    const rows = data.tickets.map(t => {
+        const cells = fields.map((f, i) => {
+            const v   = esc(String(t[f] ?? ''));
+            const cls = (f === 'status' ? (statusClass[t[f]] || '') + ' ' : '')
+                      + (f === 'id'     ? 'fw-semibold ' : '')
+                      + 'small px-2 text-nowrap';
+            return `<td class="${cls.trim()}">${v}</td>`;
+        }).join('');
+        return `<tr>${cells}</tr>`;
+    }).join('');
+
+    const thCols = hdrs.map(h => `<th class="px-2 small">${esc(h)}</th>`).join('');
 
     body.innerHTML = `
         <table class="table table-sm table-hover table-bordered mb-0" style="font-size:.82rem;">
-            <thead class="table-light sticky-top">
-                <tr>
-                    <th class="px-2 small">ID</th>
-                    <th class="px-2 small">Título</th>
-                    <th class="px-2 small">Nome Operador</th>
-                    <th class="px-2 small">Data Criação</th>
-                    <th class="px-2 small">Data Conclusão</th>
-                    <th class="px-2 small">Origem</th>
-                    <th class="px-2 small">Status</th>
-                </tr>
-            </thead>
+            <thead class="table-light sticky-top"><tr>${thCols}</tr></thead>
             <tbody>${rows}</tbody>
         </table>`;
 
@@ -542,10 +559,12 @@ function renderDrillDown(data) {
 // ── Exportações ───────────────────────────────────────────────────────────────
 
 function exportDrillCSV() {
+    const fields = currentDrillMode === 'author' ? DRILL_FIELDS_AUTHOR : DRILL_FIELDS_TECH;
+    const hdrs   = currentDrillMode === 'author' ? DRILL_HEADERS_AUTHOR : DRILL_HEADERS_TECH;
     const escape = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
     const lines  = [
-        DRILL_HEADERS.map(escape).join(','),
-        ...currentDrillData.map(t => DRILL_FIELDS.map(f => escape(t[f])).join(',')),
+        hdrs.map(escape).join(','),
+        ...currentDrillData.map(t => fields.map(f => escape(t[f])).join(',')),
     ];
     const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
     const url  = URL.createObjectURL(blob);
@@ -555,47 +574,48 @@ function exportDrillCSV() {
 }
 
 function exportDrillXLSX() {
+    const fields = currentDrillMode === 'author' ? DRILL_FIELDS_AUTHOR : DRILL_FIELDS_TECH;
+    const hdrs   = currentDrillMode === 'author' ? DRILL_HEADERS_AUTHOR : DRILL_HEADERS_TECH;
     const wsData = [
-        DRILL_HEADERS,
-        ...currentDrillData.map(t => DRILL_FIELDS.map(f => t[f] ?? '')),
+        hdrs,
+        ...currentDrillData.map(t => fields.map(f => t[f] ?? '')),
     ];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-    // Larguras de coluna aproximadas
-    ws['!cols'] = [8, 60, 30, 16, 20, 14, 16].map(w => ({ wch: w }));
-
+    ws['!cols'] = [8, 60, 30, 30, 16, 20, 14, 16].map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Chamados');
     XLSX.writeFile(wb, drillFilename('xlsx'));
 }
 
 function exportDrillPDF() {
+    const fields = currentDrillMode === 'author' ? DRILL_FIELDS_AUTHOR : DRILL_FIELDS_TECH;
+    const hdrs   = currentDrillMode === 'author' ? DRILL_HEADERS_AUTHOR : DRILL_HEADERS_TECH;
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
     doc.text('Detalhamento — ' + currentDrillTitle, 14, 14);
-
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.text(currentDrillData.length + ' chamado(s)', 14, 20);
 
     doc.autoTable({
         startY: 24,
-        head:   [DRILL_HEADERS],
-        body:   currentDrillData.map(t => DRILL_FIELDS.map(f => t[f] ?? '')),
-        styles:          { fontSize: 7, cellPadding: 2 },
-        headStyles:      { fillColor: [25, 118, 210], textColor: 255, fontStyle: 'bold' },
+        head:   [hdrs],
+        body:   currentDrillData.map(t => fields.map(f => t[f] ?? '')),
+        styles:             { fontSize: 7, cellPadding: 2 },
+        headStyles:         { fillColor: [25, 118, 210], textColor: 255, fontStyle: 'bold' },
         alternateRowStyles: { fillColor: [245, 245, 245] },
         columnStyles: {
             0: { cellWidth: 16 },
-            1: { cellWidth: 80 },
-            2: { cellWidth: 40 },
-            3: { cellWidth: 22 },
-            4: { cellWidth: 28 },
-            5: { cellWidth: 22 },
-            6: { cellWidth: 22 },
+            1: { cellWidth: 75 },
+            2: { cellWidth: 35 },
+            3: { cellWidth: 35 },
+            4: { cellWidth: 20 },
+            5: { cellWidth: 26 },
+            6: { cellWidth: 20 },
+            7: { cellWidth: 20 },
         },
     });
 

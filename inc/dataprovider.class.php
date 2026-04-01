@@ -23,8 +23,9 @@ class PluginTicketdashboardDataProvider
             PluginTicketdashboardWidget::TYPE_TIT       => self::getTITCompliance($filters),
             PluginTicketdashboardWidget::TYPE_BY_STATUS   => self::getByStatus($filters),
             PluginTicketdashboardWidget::TYPE_BY_ORIGIN   => self::getByOrigin($filters),
-            PluginTicketdashboardWidget::TYPE_TECH_ORIGIN => self::getTechOriginMatrix($filters),
-            default                                       => ['error' => 'Widget type inválido'],
+            PluginTicketdashboardWidget::TYPE_TECH_ORIGIN    => self::getTechOriginMatrix($filters),
+            PluginTicketdashboardWidget::TYPE_AUTHOR_ORIGIN  => self::getAuthorOriginMatrix($filters),
+            default                                          => ['error' => 'Widget type inválido'],
         };
     }
 
@@ -531,6 +532,98 @@ class PluginTicketdashboardDataProvider
 
         return [
             'type'       => 'matrix_table',
+            'drill_mode' => 'tech',
+            'headers'    => $originList,
+            'origin_ids' => $originIds,
+            'rows'       => $rows,
+            'total_row'  => $totalRow,
+        ];
+    }
+
+    // -------------------------------------------------------------------------
+
+    private static function getAuthorOriginMatrix(array $filters): array
+    {
+        global $DB;
+
+        $where = self::buildWhere($filters);
+
+        $params = [
+            'SELECT' => [
+                new QueryExpression(
+                    "TRIM(CONCAT(COALESCE(`glpi_users`.`firstname`,''), ' ', COALESCE(`glpi_users`.`realname`,''))) AS `author_name`"
+                ),
+                'glpi_users.id AS author_id',
+                'glpi_requesttypes.name AS origin',
+                'glpi_requesttypes.id AS origin_id',
+                new QueryExpression('COUNT(DISTINCT `glpi_tickets`.`id`) AS `total`'),
+            ],
+            'FROM'      => 'glpi_tickets',
+            'LEFT JOIN' => [
+                'glpi_users' => [
+                    'ON' => ['glpi_users' => 'id', 'glpi_tickets' => 'users_id_recipient'],
+                ],
+                'glpi_requesttypes' => [
+                    'ON' => ['glpi_requesttypes' => 'id', 'glpi_tickets' => 'requesttypes_id'],
+                ],
+            ],
+            'WHERE'   => $where,
+            'GROUPBY' => ['glpi_tickets.users_id_recipient', 'glpi_tickets.requesttypes_id'],
+            'ORDER'   => ['author_name ASC', 'total DESC'],
+        ];
+
+        self::applyGroupJoin($params, $filters);
+        self::applyTechnicianJoin($params, $filters);
+        self::applyRequesterJoin($params, $filters);
+
+        $authors = [];
+        $origins = [];
+
+        foreach ($DB->request($params) as $row) {
+            $authorId = $row['author_id'] ?? 0;
+            $name     = trim($row['author_name']) ?: __('Não identificado', 'ticketdashboard');
+            $origin   = $row['origin'] ?? __('Não definido', 'ticketdashboard');
+            $count    = (int) $row['total'];
+
+            if (!isset($authors[$authorId])) {
+                $authors[$authorId] = ['name' => $name, 'origins' => [], 'total' => 0];
+            }
+            $authors[$authorId]['origins'][$origin] = $count;
+            $authors[$authorId]['total']            += $count;
+            $origins[$origin] = (int) ($row['origin_id'] ?? 0);
+        }
+
+        if (empty($authors)) {
+            return ['type' => 'empty', 'label' => __('Autor × Origem', 'ticketdashboard')];
+        }
+
+        $originList = array_keys($origins);
+        sort($originList);
+        $originIds = array_values(array_map(fn($o) => $origins[$o], $originList));
+
+        $originTotals = array_fill_keys($originList, 0);
+        foreach ($authors as $a) {
+            foreach ($a['origins'] as $o => $c) {
+                $originTotals[$o] = ($originTotals[$o] ?? 0) + $c;
+            }
+        }
+        $grandTotal = array_sum($originTotals);
+
+        $rows = [];
+        uasort($authors, fn($a, $b) => $b['total'] <=> $a['total']);
+        foreach ($authors as $authorId => $a) {
+            $row = ['name' => $a['name'], 'tech_id' => $authorId, 'cells' => [], 'total' => $a['total']];
+            foreach ($originList as $o) {
+                $row['cells'][] = $a['origins'][$o] ?? 0;
+            }
+            $rows[] = $row;
+        }
+
+        $totalRow = ['name' => 'Total', 'cells' => array_values($originTotals), 'total' => $grandTotal];
+
+        return [
+            'type'       => 'matrix_table',
+            'drill_mode' => 'author',
             'headers'    => $originList,
             'origin_ids' => $originIds,
             'rows'       => $rows,
@@ -541,23 +634,29 @@ class PluginTicketdashboardDataProvider
     // -------------------------------------------------------------------------
 
     /**
-     * Retorna lista de chamados para o drill-down da matriz Técnico × Origem.
-     * drill_tech_id  = 0 → todos os técnicos
+     * Retorna lista de chamados para o drill-down.
+     * drill_tech_id   = 0 → todos os técnicos   (matriz Técnico × Origem)
+     * drill_author_id = 0 → todos os autores     (matriz Autor × Origem)
      * drill_origin_id = 0 → todas as origens
      */
     public static function getTicketDetails(array $filters): array
     {
         global $DB;
 
-        $where         = self::buildWhere($filters);
-        $drillTechId   = (int) ($filters['drill_tech_id']   ?? 0);
-        $drillOriginId = (int) ($filters['drill_origin_id'] ?? 0);
+        $where          = self::buildWhere($filters);
+        $drillTechId    = (int) ($filters['drill_tech_id']   ?? 0);
+        $drillAuthorId  = (int) ($filters['drill_author_id'] ?? 0);
+        $drillOriginId  = (int) ($filters['drill_origin_id'] ?? 0);
 
         if ($drillOriginId > 0) {
             $where['glpi_tickets.requesttypes_id'] = $drillOriginId;
         }
 
-        // JOIN para exibir nome do técnico + filtrar por técnico quando drill_tech_id > 0
+        if ($drillAuthorId > 0) {
+            $where['glpi_tickets.users_id_recipient'] = $drillAuthorId;
+        }
+
+        // JOIN para técnico (nome + filtro opcional)
         $techAndCond = ['tu_d.type' => 2];
         if ($drillTechId > 0) {
             $techAndCond['tu_d.users_id'] = $drillTechId;
@@ -572,7 +671,10 @@ class PluginTicketdashboardDataProvider
                 'glpi_tickets.closedate',
                 'glpi_tickets.status',
                 new QueryExpression(
-                    "TRIM(CONCAT(COALESCE(`glpi_users`.`firstname`,''), ' ', COALESCE(`glpi_users`.`realname`,''))) AS `tech_name`"
+                    "TRIM(CONCAT(COALESCE(`tech_u`.`firstname`,''), ' ', COALESCE(`tech_u`.`realname`,''))) AS `tech_name`"
+                ),
+                new QueryExpression(
+                    "TRIM(CONCAT(COALESCE(`author_u`.`firstname`,''), ' ', COALESCE(`author_u`.`realname`,''))) AS `author_name`"
                 ),
                 'glpi_requesttypes.name AS origin_name',
             ],
@@ -585,8 +687,11 @@ class PluginTicketdashboardDataProvider
                         ['AND' => $techAndCond],
                     ],
                 ],
-                'glpi_users' => [
-                    'ON' => ['glpi_users' => 'id', 'tu_d' => 'users_id'],
+                'glpi_users AS tech_u' => [
+                    'ON' => ['tech_u' => 'id', 'tu_d' => 'users_id'],
+                ],
+                'glpi_users AS author_u' => [
+                    'ON' => ['author_u' => 'id', 'glpi_tickets' => 'users_id_recipient'],
                 ],
                 'glpi_requesttypes' => [
                     'ON' => ['glpi_requesttypes' => 'id', 'glpi_tickets' => 'requesttypes_id'],
@@ -596,14 +701,12 @@ class PluginTicketdashboardDataProvider
             'ORDER'  => ['glpi_tickets.date DESC'],
         ];
 
-        // Quando filtra por técnico específico, excluir tickets sem match no JOIN
         if ($drillTechId > 0) {
             $params['WHERE'][] = ['NOT' => ['tu_d.tickets_id' => null]];
         }
 
         self::applyGroupJoin($params, $filters);
         self::applyRequesterJoin($params, $filters);
-        // Filtro de técnico da barra só é aplicado quando não há drill-down por técnico
         if ($drillTechId <= 0) {
             self::applyTechnicianJoin($params, $filters);
         }
@@ -623,9 +726,10 @@ class PluginTicketdashboardDataProvider
             $tickets[] = [
                 'id'        => $row['id'],
                 'name'      => $row['name'],
-                'tech'      => trim($row['tech_name']) ?: __('Não atribuído', 'ticketdashboard'),
-                'date'      => $row['date']     ? date('d/m/Y', strtotime($row['date'])) : '—',
-                'closedate' => $closeDate       ? date('d/m/Y H:i:s', strtotime($closeDate)) : '—',
+                'tech'      => trim($row['tech_name'])   ?: __('Não atribuído', 'ticketdashboard'),
+                'author'    => trim($row['author_name']) ?: __('Não identificado', 'ticketdashboard'),
+                'date'      => $row['date']    ? date('d/m/Y', strtotime($row['date'])) : '—',
+                'closedate' => $closeDate      ? date('d/m/Y H:i:s', strtotime($closeDate)) : '—',
                 'origin'    => $row['origin_name'] ?? '—',
                 'status'    => $statusLabels[$row['status']] ?? '—',
             ];
@@ -681,6 +785,25 @@ class PluginTicketdashboardDataProvider
         // Autor (criador do chamado)
         if (!empty($filters['author_id']) && (int) $filters['author_id'] > 0) {
             $where['glpi_tickets.users_id_recipient'] = (int) $filters['author_id'];
+        }
+
+        // Membro do grupo: chamados onde quem abriu ou atendeu pertence ao grupo
+        if (!empty($filters['member_group_id']) && (int) $filters['member_group_id'] > 0) {
+            $gid = (int) $filters['member_group_id'];
+            $where[] = new QueryExpression(
+                "EXISTS (
+                    SELECT 1
+                    FROM `glpi_tickets_users` AS `tu_mg`
+                    INNER JOIN `glpi_groups_users` AS `gu_mg` ON `gu_mg`.`users_id` = `tu_mg`.`users_id`
+                    WHERE `tu_mg`.`tickets_id` = `glpi_tickets`.`id`
+                      AND `gu_mg`.`groups_id` = {$gid}
+                    UNION
+                    SELECT 1
+                    FROM `glpi_groups_users` AS `gu_mg2`
+                    WHERE `gu_mg2`.`users_id` = `glpi_tickets`.`users_id_recipient`
+                      AND `gu_mg2`.`groups_id` = {$gid}
+                )"
+            );
         }
 
         return $where;

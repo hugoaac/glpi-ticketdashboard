@@ -117,6 +117,35 @@ class PluginTicketdashboardDashboard extends CommonDBTM
     }
 
     /**
+     * Lista de grupos para o filtro "Membro do Grupo".
+     * Retorna todos os grupos que têm pelo menos um membro.
+     */
+    public static function getMemberGroupsForFilter(): array
+    {
+        global $DB;
+
+        $groups = [];
+        $iter = $DB->request([
+            'SELECT'     => ['g.id', 'g.name'],
+            'FROM'       => ['glpi_groups AS g'],
+            'INNER JOIN' => [
+                'glpi_groups_users AS gu' => [
+                    'ON' => ['g.id', 'gu.groups_id'],
+                ],
+            ],
+            'WHERE'   => [],
+            'GROUPBY' => ['g.id'],
+            'ORDERBY' => 'g.name ASC',
+        ]);
+
+        foreach ($iter as $row) {
+            $groups[$row['id']] = $row['name'];
+        }
+
+        return $groups;
+    }
+
+    /**
      * Retorna o ID do primeiro grupo de atendimento do usuário logado.
      * Usado para pré-selecionar o filtro de grupo ao abrir o dashboard.
      */
