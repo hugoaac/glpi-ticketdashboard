@@ -175,6 +175,38 @@ class PluginTicketdashboardDashboard extends CommonDBTM
     }
 
     /**
+     * Lista de autores para o filtro (usuários que criaram chamados, via users_id_recipient).
+     */
+    public static function getAuthorsForFilter(): array
+    {
+        global $DB;
+
+        $authors = [];
+        $iter = $DB->request([
+            'SELECT'     => ['u.id', 'u.firstname', 'u.realname', 'u.name'],
+            'FROM'       => ['glpi_users AS u'],
+            'INNER JOIN' => [
+                'glpi_tickets AS t' => [
+                    'ON' => ['u.id', 't.users_id_recipient'],
+                ],
+            ],
+            'WHERE'   => ['u.is_active' => 1, 'u.is_deleted' => 0, 't.is_deleted' => 0],
+            'GROUPBY' => ['u.id'],
+            'ORDERBY' => ['u.realname ASC', 'u.firstname ASC'],
+        ]);
+
+        foreach ($iter as $row) {
+            $name = trim($row['firstname'] . ' ' . $row['realname']);
+            if ($name === '') {
+                $name = $row['name'];
+            }
+            $authors[$row['id']] = $name;
+        }
+
+        return $authors;
+    }
+
+    /**
      * Lista de técnicos para o filtro (usuários com tickets atribuídos no período).
      */
     public static function getTechniciansForFilter(): array

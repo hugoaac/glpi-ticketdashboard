@@ -14,6 +14,7 @@ $filters     = [
     'priority'     => $_GET['priority']     ?? 0,
     'users_id'     => $_GET['users_id']     ?? [],
     'requester_id' => $_GET['requester_id'] ?? 0,
+    'author_id'    => $_GET['author_id']    ?? 0,
     'status'       => $_GET['status']       ?? 0,
 ];
 

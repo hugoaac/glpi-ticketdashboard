@@ -482,7 +482,7 @@ class PluginTicketdashboardDataProvider
 
         // Monta estrutura: techs[tech_id] = ['name' => ..., 'origins' => [origin => count]]
         $techs   = [];
-        $origins = [];
+        $origins = []; // origin_name => origin_id
 
         foreach ($DB->request($params) as $row) {
             $techId = $row['tech_id'] ?? 0;
@@ -495,15 +495,16 @@ class PluginTicketdashboardDataProvider
             }
             $techs[$techId]['origins'][$origin] = $count;
             $techs[$techId]['total']            += $count;
-            $origins[$origin] = true;
+            $origins[$origin] = (int) ($row['origin_id'] ?? 0);
         }
 
         if (empty($techs)) {
             return ['type' => 'empty', 'label' => __('Técnico × Origem', 'ticketdashboard')];
         }
 
-        $originList   = array_keys($origins);
+        $originList = array_keys($origins);
         sort($originList);
+        $originIds = array_values(array_map(fn($o) => $origins[$o], $originList));
 
         // Totais por origem
         $originTotals = array_fill_keys($originList, 0);
@@ -514,11 +515,11 @@ class PluginTicketdashboardDataProvider
         }
         $grandTotal = array_sum($originTotals);
 
-        // Monta rows
+        // Monta rows (preserva tech_id como chave)
         $rows = [];
         uasort($techs, fn($a, $b) => $b['total'] <=> $a['total']);
-        foreach ($techs as $t) {
-            $row = ['name' => $t['name'], 'cells' => [], 'total' => $t['total']];
+        foreach ($techs as $techId => $t) {
+            $row = ['name' => $t['name'], 'tech_id' => $techId, 'cells' => [], 'total' => $t['total']];
             foreach ($originList as $o) {
                 $row['cells'][] = $t['origins'][$o] ?? 0;
             }
@@ -531,9 +532,106 @@ class PluginTicketdashboardDataProvider
         return [
             'type'       => 'matrix_table',
             'headers'    => $originList,
+            'origin_ids' => $originIds,
             'rows'       => $rows,
             'total_row'  => $totalRow,
         ];
+    }
+
+    // -------------------------------------------------------------------------
+
+    /**
+     * Retorna lista de chamados para o drill-down da matriz Técnico × Origem.
+     * drill_tech_id  = 0 → todos os técnicos
+     * drill_origin_id = 0 → todas as origens
+     */
+    public static function getTicketDetails(array $filters): array
+    {
+        global $DB;
+
+        $where         = self::buildWhere($filters);
+        $drillTechId   = (int) ($filters['drill_tech_id']   ?? 0);
+        $drillOriginId = (int) ($filters['drill_origin_id'] ?? 0);
+
+        if ($drillOriginId > 0) {
+            $where['glpi_tickets.requesttypes_id'] = $drillOriginId;
+        }
+
+        // JOIN para exibir nome do técnico + filtrar por técnico quando drill_tech_id > 0
+        $techAndCond = ['tu_d.type' => 2];
+        if ($drillTechId > 0) {
+            $techAndCond['tu_d.users_id'] = $drillTechId;
+        }
+
+        $params = [
+            'SELECT' => [
+                'glpi_tickets.id',
+                'glpi_tickets.name',
+                'glpi_tickets.date',
+                'glpi_tickets.solvedate',
+                'glpi_tickets.closedate',
+                'glpi_tickets.status',
+                new QueryExpression(
+                    "TRIM(CONCAT(COALESCE(`glpi_users`.`firstname`,''), ' ', COALESCE(`glpi_users`.`realname`,''))) AS `tech_name`"
+                ),
+                'glpi_requesttypes.name AS origin_name',
+            ],
+            'FROM'      => 'glpi_tickets',
+            'LEFT JOIN' => [
+                'glpi_tickets_users AS tu_d' => [
+                    'ON' => [
+                        'glpi_tickets' => 'id',
+                        'tu_d'         => 'tickets_id',
+                        ['AND' => $techAndCond],
+                    ],
+                ],
+                'glpi_users' => [
+                    'ON' => ['glpi_users' => 'id', 'tu_d' => 'users_id'],
+                ],
+                'glpi_requesttypes' => [
+                    'ON' => ['glpi_requesttypes' => 'id', 'glpi_tickets' => 'requesttypes_id'],
+                ],
+            ],
+            'WHERE'  => $where,
+            'ORDER'  => ['glpi_tickets.date DESC'],
+        ];
+
+        // Quando filtra por técnico específico, excluir tickets sem match no JOIN
+        if ($drillTechId > 0) {
+            $params['WHERE'][] = ['NOT' => ['tu_d.tickets_id' => null]];
+        }
+
+        self::applyGroupJoin($params, $filters);
+        self::applyRequesterJoin($params, $filters);
+        // Filtro de técnico da barra só é aplicado quando não há drill-down por técnico
+        if ($drillTechId <= 0) {
+            self::applyTechnicianJoin($params, $filters);
+        }
+
+        $statusLabels = [
+            1 => __('Novo', 'ticketdashboard'),
+            2 => __('Em atendimento', 'ticketdashboard'),
+            3 => __('Planejado', 'ticketdashboard'),
+            4 => __('Pendente', 'ticketdashboard'),
+            5 => __('Resolvido', 'ticketdashboard'),
+            6 => __('Fechado', 'ticketdashboard'),
+        ];
+
+        $tickets = [];
+        foreach ($DB->request($params) as $row) {
+            $closeDate = $row['closedate'] ?: ($row['solvedate'] ?: null);
+            $tickets[] = [
+                'id'        => $row['id'],
+                'name'      => $row['name'],
+                'tech'      => trim($row['tech_name']) ?: __('Não atribuído', 'ticketdashboard'),
+                'date'      => $row['date']     ? date('d/m/Y', strtotime($row['date'])) : '—',
+                'closedate' => $closeDate       ? date('d/m/Y H:i:s', strtotime($closeDate)) : '—',
+                'origin'    => $row['origin_name'] ?? '—',
+                'status'    => $statusLabels[$row['status']] ?? '—',
+            ];
+        }
+
+        return ['tickets' => $tickets, 'total' => count($tickets)];
     }
 
     // -------------------------------------------------------------------------
@@ -578,6 +676,11 @@ class PluginTicketdashboardDataProvider
         // Status
         if (!empty($filters['status']) && (int) $filters['status'] > 0) {
             $where['glpi_tickets.status'] = (int) $filters['status'];
+        }
+
+        // Autor (criador do chamado)
+        if (!empty($filters['author_id']) && (int) $filters['author_id'] > 0) {
+            $where['glpi_tickets.users_id_recipient'] = (int) $filters['author_id'];
         }
 
         return $where;
