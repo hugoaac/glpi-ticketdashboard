@@ -65,7 +65,7 @@ Html::header(
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm mb-1"><?= __('Grupo', 'ticketdashboard') ?></label>
+                    <label class="form-label form-label-sm mb-1"><?= __('Fila', 'ticketdashboard') ?></label>
                     <select id="filter_groups_id" class="form-select form-select-sm">
                         <option value="0"><?= __('Todos', 'ticketdashboard') ?></option>
                         <?php foreach ($groups as $gid => $gname): ?>
@@ -86,7 +86,7 @@ Html::header(
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm mb-1"><?= __('Requerente - Requerente', 'ticketdashboard') ?></label>
+                    <label class="form-label form-label-sm mb-1"><?= __('Requerente', 'ticketdashboard') ?></label>
                     <select id="filter_requester_id" class="form-select form-select-sm">
                         <option value="0"><?= __('Todos', 'ticketdashboard') ?></option>
                         <?php foreach ($requesters as $rid => $rname): ?>
@@ -95,7 +95,7 @@ Html::header(
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm mb-1"><?= __('Requerente - Autor', 'ticketdashboard') ?></label>
+                    <label class="form-label form-label-sm mb-1"><?= __('Autor', 'ticketdashboard') ?></label>
                     <select id="filter_author_id" class="form-select form-select-sm">
                         <option value="0"><?= __('Todos', 'ticketdashboard') ?></option>
                         <?php foreach ($authors as $aid => $aname): ?>
@@ -104,7 +104,7 @@ Html::header(
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label form-label-sm mb-1"><?= __('Membro do Grupo', 'ticketdashboard') ?></label>
+                    <label class="form-label form-label-sm mb-1"><?= __('Autor Membro do Grupo', 'ticketdashboard') ?></label>
                     <select id="filter_member_group_id" class="form-select form-select-sm">
                         <option value="0"><?= __('Todos', 'ticketdashboard') ?></option>
                         <?php foreach ($memberGroups as $mgid => $mgname): ?>

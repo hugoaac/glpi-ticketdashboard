@@ -787,21 +787,15 @@ class PluginTicketdashboardDataProvider
             $where['glpi_tickets.users_id_recipient'] = (int) $filters['author_id'];
         }
 
-        // Membro do grupo: chamados onde quem abriu ou atendeu pertence ao grupo
+        // Autor membro do grupo: chamados cujo autor (users_id_recipient) pertence ao grupo
         if (!empty($filters['member_group_id']) && (int) $filters['member_group_id'] > 0) {
             $gid = (int) $filters['member_group_id'];
             $where[] = new QueryExpression(
                 "EXISTS (
                     SELECT 1
-                    FROM `glpi_tickets_users` AS `tu_mg`
-                    INNER JOIN `glpi_groups_users` AS `gu_mg` ON `gu_mg`.`users_id` = `tu_mg`.`users_id`
-                    WHERE `tu_mg`.`tickets_id` = `glpi_tickets`.`id`
+                    FROM `glpi_groups_users` AS `gu_mg`
+                    WHERE `gu_mg`.`users_id` = `glpi_tickets`.`users_id_recipient`
                       AND `gu_mg`.`groups_id` = {$gid}
-                    UNION
-                    SELECT 1
-                    FROM `glpi_groups_users` AS `gu_mg2`
-                    WHERE `gu_mg2`.`users_id` = `glpi_tickets`.`users_id_recipient`
-                      AND `gu_mg2`.`groups_id` = {$gid}
                 )"
             );
         }
